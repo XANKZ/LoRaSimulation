@@ -13,11 +13,23 @@ SOIL_MOISURE_TRASMIT_THRESHOLD = 3      # Ngưỡng thay đổi độ ẩm đấ
 # Còn 1 vấn để nếu các thông số để đo không thay đổi quá nhiều làm sao để gateway biết
 # Là node hỏng hay nhiệt độ còn thay đổi ít
 
+# Hằng số của mạng LoRa
+TIME_ON_AIR = {
+    7: 0.03,    # SF7: ~30ms
+    8: 0.05,    # SF8: ~50ms
+    9: 0.09,    # SF9: ~90ms
+    10: 0.16,   # SF10: ~160ms
+    11: 0.33,   # SF11: ~330ms
+    12: 0.58    # SF12: ~580ms
+}
+
 class  Node:
-    def __init__(self, node_id, x, y):
+    def __init__(self, node_id, x, y, sf):
         print(f">>> Khởi tạo vị trí node tại vị trí ({x},{y}).")
         self.id = node_id
         self.pos = (x,y)
+        self.sf = sf #Spreading factor của node
+        self.channel = 0 # Giả sử tất cả các node dùng chung 1 kênh
         self.state = "SLEEP"
         self.next_wake_up_time = 0
         self.energy_level = 100000.0
@@ -39,17 +51,27 @@ class  Node:
         soil_moisure = 0 + 60 * random.random()
         packet = {
             'source_id': self.id,
-            'data': (temperature, humidity, soil_moisure)
+            'data': (temperature, humidity, soil_moisure),
+            'sf': self.sf,
+            'channel': self.channel
         }
         #print(f"    Node {self.id} đã tạo gói tin với NHIỆT ĐỘ: {temperature:.2f}'C và ĐỘ ẨM KHÔNG KHÍ: {humidity:.2f}%RH và ĐỘ ẨM ĐẤT: {soil_moisure:.2f}.")
         return packet
     
     def transmit_packet(self, packet):
         self.energy_level -= ENERGY_CONSUMPTION["TRANSMIT"]
-        print(f"    Node {self.id} đã tạo gói tin với NHIỆT ĐỘ: {self.temperature:.2f}'C và ĐỘ ẨM KHÔNG KHÍ: {self.humidity:.2f}%RH và ĐỘ ẨM ĐẤT: {self.soil_moisure:.2f}.")
+        temperature, humidity, soil_moisure = packet['data']
+        print(f"    Node {self.id} đã tạo gói tin với NHIỆT ĐỘ: {temperature:.2f}'C và ĐỘ ẨM KHÔNG KHÍ: {humidity:.2f}%RH và ĐỘ ẨM ĐẤT: {soil_moisure:.2f}.")
         print(f"    Node {self.id} [Truyền tin]. Năng lượng còn lại: {self.energy_level:.2f}")
+        return packet
 
     def update(self, current_time):
+        if self.energy_level <= 0:
+            if self.state != "DEAD":
+                print(f">>> Node {self.id} đã cạn kiệt năng lượng và ngừng hoạt động.")
+                self.state = "DEAD"
+            return None
+
         packet_to_send = None
 
         if self.state == "SLEEP":
@@ -62,7 +84,7 @@ class  Node:
 
             # Đo và tạo gói tin
             packet = self.create_packet()
-            current_temperature = packet['data']
+            current_temperature, current_humidity, current_soil_moisure = packet['data']
 
             # Logic
             should_transmit = False
@@ -72,7 +94,7 @@ class  Node:
                 and self.last_sent_soil_moisure is None):
                 should_transmit = True
             else:
-                change = abs( current_temperature - self.last_sent_temperature)
+                change = abs(current_temperature - self.last_sent_temperature)
                 if change > TEMPERATURE_TRANSMIT_THRESHOLD:
                     print(f"    Node {self.id} phát hiện thay đổi lớn ({change:.2f}'C). Sẽ gửi tin đi.")
                     should_transmit = True
@@ -82,7 +104,9 @@ class  Node:
             if should_transmit:
             # Truyền gói tin
                 packet_to_send = self.transmit_packet(packet)
-
+                self.last_sent_temperature = current_temperature
+                self.last_sent_humidity = current_humidity
+                self.last_sent_soil_moisure = current_soil_moisure
             # Đi ngủ
                 print(f">>> Thời gian hiện tại {current_time}s: Node {self.id} đi ngủ trong 60s")
                 self.go_to_sleep(current_time + sensing_time, 30)

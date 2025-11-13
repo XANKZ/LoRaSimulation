@@ -1,0 +1,2 @@
+number_of_nodes,total_sent,total_received,total_collisions,pdr,avg_energy_left
+100,100,0,100,0.0,99449.0

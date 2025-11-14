@@ -70,6 +70,8 @@ class  Node:
         return packet
 
     def update(self, current_time):
+        logs = []
+
         if self.energy_level <= 0:
             if self.state != "DEAD":
                 print(f">>> Node {self.id} đã cạn kiệt năng lượng và ngừng hoạt động.")
@@ -83,6 +85,7 @@ class  Node:
 
         if self.state == "SLEEP" and current_time >= self.next_wake_up_time:
             self.state = "SENSING"
+            logs.append({'event': 'WAKE_UP', 'details': ''})
             print(f">>> Thời gian hiện tại {current_time}s: Node{self.id} thức dậy để đo dữ liệu.")
             sensing_time = 5
 
@@ -121,6 +124,12 @@ class  Node:
                 should_transmit = True
                 reason_to_transmit = "Gửi tin Heartbeat định kỳ."
 
+            logs.append(
+                {
+                    'event': 'DECISION',
+                    'details': reason_to_transmit or "Thay đổi không đáng kể."
+                }
+            )
             if should_transmit:
                 print(f"    Node {self.id}: Quyết định gửi gói tin đi với lý do: {reason_to_transmit}")
             # Truyền gói tin
@@ -134,4 +143,20 @@ class  Node:
                 print(f">>> Thời gian hiện tại {current_time}s: Node {self.id} đi ngủ trong 30s")
                 self.go_to_sleep(current_time + sensing_time, 30)
         return packet_to_send
+    def update_and_get_log(self, current_time):
+        logs = []
+        # lưu trạng thái trước khi update để phát hiện thay đổi trạng thái nếu cần
+        prev_state = self.state
+        packet = self.update(current_time)
+
+        # nếu node chết
+        if self.state == "DEAD" and prev_state != "DEAD":
+            logs.append({'event': 'DEAD', 'details': 'Node đã cạn năng lượng và ngưng hoạt động.'})
+
+        if packet:
+            # packet['data'] là tuple (temp, hum, soil)
+            logs.append({'event': 'SENSE', 'details': f"Đo được {packet['data']}"})
+            logs.append({'event': 'TX', 'details': f"Truyền trên kênh {packet.get('channel')} SF{packet.get('sf')}"})
+
+        return {'packet': packet, 'logs': logs}
     

@@ -4,6 +4,7 @@ from Channel import calculate_rssi
 from ChannelManager import ChannelManager
 import random
 import csv
+from Logger import Logger
 
 print("Bắt đầu chương trình mô phỏng.")
 
@@ -42,11 +43,30 @@ def run_simulation(number_of_nodes, duration_seconds):
     total_packets_received = 0
     total_collisions = 0
 
+    logger = Logger(filename = f"log_{number_of_nodes}_nodes.csv")
+
+    node_positions = {}
+    for node in nodes:
+        node_positions[node.id] = node.pos
+        logger.log(timestamp = 0,
+                   node_id = node.id,
+                   event_type = "INIT",
+                   details = f"SF = {node.sf}, Pos = {node.pos}",
+                   energy_level = node.energy_level)
+
     for time_step in range(duration_seconds):
         # if time_step %3600 == 0:
         #     print(f" Giờ thứ {time_step // 3600}.")
+        
         for node in nodes:
-            packet = node.update(time_step)
+            node_result = node.update_and_get_log(time_step)
+            for log_entry in node_result['logs']:
+                logger.log(timestamp = time_step,
+                           node_id = node.id,
+                           event_type = log_entry['event'],
+                           details = log_entry['details'],
+                           energy_level = node.energy_level)
+            packet = node_result['packet']
 
             if packet:
                 total_packets_sent += 1
@@ -54,38 +74,56 @@ def run_simulation(number_of_nodes, duration_seconds):
                 is_collided = channel_manager.check_collision(packet, time_step)
                 if is_collided:
                     total_collisions += 1
+                    logger.log(timestamp = time_step,
+                               node_id = node.id,
+                               event_type = "COLLISION",
+                               details = f"Xung đột trên kênh {packet['channel']}/SF{packet['sf']}",
+                               energy_level = node.energy_level)
                     continue
                 #print(f"!!! Thời gian {time_step}s: Node {node.id} đang phát gói tin.")
 
-                is_receive_by_any_gw = False
+                best_gateway_id = None
+                best_rssi = -999
+
+                #is_receive_by_any_gw = False
                 
                 for gw in gateways:
                     rssi = calculate_rssi(node, gw)
                     if gw.receive_packet(packet, rssi):
-                        is_receive_by_any_gw = True
-                        break
-                
-                if is_receive_by_any_gw:
+                        if rssi > best_rssi:
+                            best_rssi = rssi
+                            best_gateway_id = gw.id
+                    # no break here — check all gateways to find best RSSI
+
+                #if is_receive_by_any_gw:
+                if best_gateway_id is not None:
                     total_packets_received += 1
+                    logger.log(timestamp = time_step,
+                               node_id = node.id,
+                               event_type = "TRANSMIT_SUCCESS",
+                               details = f"Dữ liệu; {packet['data']}",
+                               energy_level = node.energy_level,
+                               rssi = best_rssi,
+                               gateway_id = best_gateway_id)
+                else:
+                    logger.log(timestamp = time_step,
+                               node_id = node.id,
+                               event_type = "TRANSMIT_FAIL_RSSI",
+                               details = "Không có gateway nào trong tầm phủ sóng.",
+                               energy_level = node.energy_level)
+    # sau khi hoàn tất vòng lặp thời gian, thu kết quả và vị trí
+    gateway_positions = {gw.id: gw.pos for gw in gateways}
 
-    total_energy_left = sum(node.energy_level for node in nodes)
-
-    average_energy_left = total_energy_left / number_of_nodes
-
-    # Packet Delivery Ratio (PDR): tỉ lệ gửi gói tin thành công
-    if total_packets_sent > 0:
-        pdr = (total_packets_received / total_packets_sent) * 100
-        print(f"Tỉ lệ gửi gói tin thành công (PDR): {pdr:.2f}%")
-    else:
-        pdr = 0
-
+    # build final result dict (keeps previous keys)
     result = {
             "number_of_nodes": number_of_nodes,
             "total_sent": total_packets_sent,
             "total_received": total_packets_received,
             "total_collisions": total_collisions,
-            "pdr": pdr,
-            "avg_energy_left": average_energy_left
+            "pdr": (total_packets_received / total_packets_sent * 100) if total_packets_sent > 0 else 0,
+            "avg_energy_left": sum(node.energy_level for node in nodes) / number_of_nodes,
+            "node_positions": node_positions,
+            "gateway_positions": gateway_positions
         }
     return result
 

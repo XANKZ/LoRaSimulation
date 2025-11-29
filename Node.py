@@ -10,9 +10,6 @@ ENERGY_CONSUMPTION = {
 TEMPERATURE_TRANSMIT_THRESHOLD = 0.5    # Ngưỡng thay đổi nhiệt độ để gửi tin 1 
 AIR_HUMIDITY_TRANSMIT_THRESHOLD = 2         # Ngưỡng thay đổi độ ẩm đất để truyền tin 2%
 SOIL_MOISURE_TRANSMIT_THRESHOLD = 3      # Ngưỡng thay đổi độ ẩm đất để truyền tin 3%
-# Còn 1 vấn để nếu các thông số để đo không thay đổi quá nhiều làm sao để gateway biết
-# Là node hỏng hay nhiệt độ còn thay đổi ít
-
 # Hằng số của mạng LoRa
 # Giả sử băng thông 125kHz, Coding Rate 4/5, Payload 10 bytes
 TIME_ON_AIR = {
@@ -34,7 +31,7 @@ class  Node:
         self.sf = sf #Spreading factor của node
         self.channel = 0 # Giả sử tất cả các node dùng chung 1 kênh
         self.state = "SLEEP"
-        self.next_wake_up_time = 0
+        self.next_wake_up_time = random.uniform(0,60)
         self.energy_level = 100000.0
         self.last_sent_temperature = None
         self.last_sent_air_humidity = None
@@ -43,7 +40,11 @@ class  Node:
     
     def go_to_sleep(self, current_time, sleep_duration):
         self.state = "SLEEP"
-        self.next_wake_up_time = current_time + sleep_duration
+
+        jitter = random.uniform(-2.0 , 2.0)
+        actual_sleep_duration = sleep_duration + jitter
+
+        self.next_wake_up_time = current_time + actual_sleep_duration
         print(f">>> Hiện tại {current_time}s: Nodes{self.id} đi ngủ. Thức dậy vào lúc {self.next_wake_up_time}s.")
 
     def create_packet(self):
@@ -76,7 +77,7 @@ class  Node:
             if self.state != "DEAD":
                 print(f">>> Node {self.id} đã cạn kiệt năng lượng và ngừng hoạt động.")
                 self.state = "DEAD"
-            return None
+            return None, logs
 
         packet_to_send = None
 
@@ -106,7 +107,7 @@ class  Node:
 
             else:
                 temperature_change = abs(current_temperature - self.last_sent_temperature)
-                air_humidiy_change = abs(current_air_humidity - self.last_sent_humidity)
+                air_humidiy_change = abs(current_air_humidity - self.last_sent_air_humidity)
                 soil_moisure_change = abs(current_soil_moisure - self.last_sent_soil_moisure)
 
                 if temperature_change > TEMPERATURE_TRANSMIT_THRESHOLD:
@@ -140,14 +141,16 @@ class  Node:
             else:
                 print(f"    Node {self.id}: Các giá trị thay đổi không đáng kể. Không gửi tin.")
             # Đi ngủ
-                print(f">>> Thời gian hiện tại {current_time}s: Node {self.id} đi ngủ trong 30s")
-                self.go_to_sleep(current_time + sensing_time, 30)
-        return packet_to_send
+            print(f">>> Thời gian hiện tại {current_time}s: Node {self.id} đi ngủ trong 30s")
+            self.go_to_sleep(current_time + sensing_time, 30)
+        return packet_to_send, logs
+    
     def update_and_get_log(self, current_time):
         logs = []
-        # lưu trạng thái trước khi update để phát hiện thay đổi trạng thái nếu cần
         prev_state = self.state
-        packet = self.update(current_time)
+        packet, internal_logs = self.update(current_time)
+
+        logs.extend(internal_logs)
 
         # nếu node chết
         if self.state == "DEAD" and prev_state != "DEAD":
@@ -159,4 +162,3 @@ class  Node:
             logs.append({'event': 'TX', 'details': f"Truyền trên kênh {packet.get('channel')} SF{packet.get('sf')}"})
 
         return {'packet': packet, 'logs': logs}
-    

@@ -69,10 +69,10 @@ if __name__ == "__main__":
         
         # Giả định vị trí gateway (có thể lưu vào file nếu muốn)
         gateway_positions = {
-            0: (250000, 250000),
-            1: (250000, 750000),
-            2: (750000, 250000),
-            3: (750000, 750000)
+            0: (250, 250),
+            1: (250, 750),
+            2: (750, 250),
+            3: (750, 750)
         }
         
         visualize_network_map(LOG_FILE, node_positions, gateway_positions)

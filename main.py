@@ -47,73 +47,78 @@ def run_simulation(number_of_nodes, duration_seconds):
     logger = Logger(filename = f"log_{number_of_nodes}_nodes.csv")
 
     node_positions = {}
-    for time_step in tqdm(range(duration_seconds), desc="Simulating"):
-        for node in nodes:
-            node_positions[node.id] = node.pos
-            logger.log(timestamp = 0,
-                    node_id = node.id,
-                    event_type = "INIT",
-                    details = f"SF = {node.sf}, Pos = {node.pos}",
-                    energy_level = node.energy_level)
 
-        for time_step in range(duration_seconds):
-            # if time_step %3600 == 0:
-            #     print(f" Giờ thứ {time_step // 3600}.")
-            
-            for node in nodes:
-                # gọi method trên instance
-                node_result = node.update_and_get_log(time_step)
-                for log_entry in node_result.get('logs', []):
+    for node in nodes:
+        node_positions[node.id] = node.pos
+        logger.log(
+            timestamp = 0,
+            node_id = node.id,
+            event_type = "INIT",
+            details = f"SF = {node.sf}, Pos = {node.pos}",
+            energy_level = node.energy_level
+        )
+
+    for time_step in tqdm(range(duration_seconds), mininterval = 1.0, desc = "Simulating"):
+        active_nodes = [n for n in nodes if n.state != "SLEEP" or time_step >= n.next_wake_up_time]
+        
+        if not active_nodes:
+            continue
+
+        for node in nodes:
+            # gọi method trên instance
+            node_result = node.update_and_get_log(time_step)
+
+            for log_entry in node_result.get('logs', []):
+                logger.log(timestamp = time_step,
+                        node_id = node.id,
+                        event_type = log_entry.get('event'),
+                        details = log_entry.get('details', ''),
+                        energy_level = node.energy_level)
+            packet = node_result.get('packet')
+
+            if packet:
+                total_packets_sent += 1
+
+                is_collided = channel_manager.check_collision(packet, time_step)
+                if is_collided:
+                    total_collisions += 1
                     logger.log(timestamp = time_step,
                             node_id = node.id,
-                            event_type = log_entry.get('event'),
-                            details = log_entry.get('details', ''),
+                            event_type = "COLLISION",
+                            details = f"Xung đột trên kênh {packet['channel']}/SF{packet['sf']}",
                             energy_level = node.energy_level)
-                packet = node_result.get('packet')
+                    continue
+                #print(f"!!! Thời gian {time_step}s: Node {node.id} đang phát gói tin.")
 
-                if packet:
-                    total_packets_sent += 1
+                best_gateway_id = None
+                best_rssi = -999
 
-                    is_collided = channel_manager.check_collision(packet, time_step)
-                    if is_collided:
-                        total_collisions += 1
-                        logger.log(timestamp = time_step,
-                                node_id = node.id,
-                                event_type = "COLLISION",
-                                details = f"Xung đột trên kênh {packet['channel']}/SF{packet['sf']}",
-                                energy_level = node.energy_level)
-                        continue
-                    #print(f"!!! Thời gian {time_step}s: Node {node.id} đang phát gói tin.")
-
-                    best_gateway_id = None
-                    best_rssi = -999
-
-                    #is_receive_by_any_gw = False
-                    
-                    for gw in gateways:
-                        rssi = calculate_rssi(node, gw)
-                        if gw.receive_packet(packet, rssi):
-                            if rssi > best_rssi:
-                                best_rssi = rssi
-                                best_gateway_id = gw.id
-                                #is_receive_by_any_gw = True
-                    
-                    #if is_receive_by_any_gw:
-                    if best_gateway_id is not None:
-                        total_packets_received += 1
-                        logger.log(timestamp = time_step,
-                                node_id = node.id,
-                                    event_type = "TRANSMIT_SUCCESS",
-                                    details = f"Dữ liệu; {packet['data']}",
-                                energy_level = node.energy_level,
-                                    rssi = best_rssi,
-                                    gateway_id = best_gateway_id)
-                    else:
-                        logger.log(timestamp = time_step,
-                                node_id = node.id,
-                                event_type = "TRANSMIT_FAIL_RSSI",
-                                details = "Không có gateway nào trong tầm phủ sóng.",
-                                energy_level = node.energy_level)
+                #is_receive_by_any_gw = False
+                
+                for gw in gateways:
+                    rssi = calculate_rssi(node, gw)
+                    if gw.receive_packet(packet, rssi):
+                        if rssi > best_rssi:
+                            best_rssi = rssi
+                            best_gateway_id = gw.id
+                            #is_receive_by_any_gw = True
+                
+                #if is_receive_by_any_gw:
+                if best_gateway_id is not None:
+                    total_packets_received += 1
+                    logger.log(timestamp = time_step,
+                            node_id = node.id,
+                                event_type = "TRANSMIT_SUCCESS",
+                                details = f"Dữ liệu; {packet['data']}",
+                            energy_level = node.energy_level,
+                                rssi = best_rssi,
+                                gateway_id = best_gateway_id)
+                else:
+                    logger.log(timestamp = time_step,
+                            node_id = node.id,
+                            event_type = "TRANSMIT_FAIL_RSSI",
+                            details = "Không có gateway nào trong tầm phủ sóng.",
+                            energy_level = node.energy_level)
     logger.close()                        
 
     # Packet Delivery Ratio (PDR): tỉ lệ gửi gói tin thành công

@@ -21,7 +21,7 @@ TIME_ON_AIR = {
     12: 0.58    # SF12: ~580ms
 }
 
-HEARTBEAT_INTERVAL = 4 * 3600
+HEARTBEAT_INTERVAL = 3600
 
 class  Node:
     def __init__(self, node_id, x, y, sf):
@@ -81,10 +81,14 @@ class  Node:
 
         packet_to_send = None
 
-        if self.state == "SLEEP":
-            self.energy_level -= ENERGY_CONSUMPTION["SLEEP_TICK"]
+        # if self.state == "SLEEP":
+        #     self.energy_level -= ENERGY_CONSUMPTION["SLEEP_TICK"]
 
         if self.state == "SLEEP" and current_time >= self.next_wake_up_time:
+            sleep_duration = current_time - (self.next_wake_up_time - 30)
+
+            self.energy_level -= ENERGY_CONSUMPTION["SLEEP_TICK"] * sleep_duration
+
             self.state = "SENSING"
             logs.append({'event': 'WAKE_UP', 'details': ''})
             print(f">>> Thời gian hiện tại {current_time}s: Node{self.id} thức dậy để đo dữ liệu.")

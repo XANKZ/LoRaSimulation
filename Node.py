@@ -29,7 +29,7 @@ class  Node:
         self.id = node_id
         self.pos = (x,y)
         self.sf = sf #Spreading factor của node
-        self.channel = 0 # Giả sử tất cả các node dùng chung 1 kênh
+        self.channel = random.randint(0,7) # Giả sử tất cả các node dùng chung 1 kênh
         self.state = "SLEEP"
         self.next_wake_up_time = random.uniform(0,60)
         self.energy_level = 100000.0

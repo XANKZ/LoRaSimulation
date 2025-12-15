@@ -7,8 +7,16 @@ import csv
 from Logger import Logger
 from tqdm import tqdm
 
-print("Bắt đầu chương trình mô phỏng.")
+GATEWAY_SENSITIVITY = {
+    7: -123.0,
+    8: -126.0,
+    9: -129.0,
+    10: -132.0,
+    11: -134.5,
+    12: -137.0
+}
 
+print("Bắt đầu chương trình mô phỏng.")
 
 def run_simulation(number_of_nodes, duration_seconds):
     print(f"\nBắt đầu kịch vạn với {number_of_nodes} Node.")
@@ -35,7 +43,7 @@ def run_simulation(number_of_nodes, duration_seconds):
         Gateway(gateway_id = 3, x = FARM_WIDTH * 0.75 , y = FARM_HEIGHT * 0.75)
     ]
 
-    channel_manager = ChannelManager(num_channels = 1)
+    channel_manager = ChannelManager(num_channels = 8)
     # Cần nghiên cứu lại chỗ này, không biết chắc là LoRa có hoạt động như vậy không
 
     print("\nĐã khởi tạo xong Node và Gateway. Bắt đầu vòng lặp thời gian...")
@@ -48,6 +56,7 @@ def run_simulation(number_of_nodes, duration_seconds):
 
     node_positions = {}
 
+    #Ghi log init
     for node in nodes:
         node_positions[node.id] = node.pos
         logger.log(
@@ -58,7 +67,10 @@ def run_simulation(number_of_nodes, duration_seconds):
             energy_level = node.energy_level
         )
 
+    #Vòng lặp chính
     for time_step in tqdm(range(duration_seconds), mininterval = 1.0, desc = "Simulating"):
+        
+        #Lọc node cần xử lý
         active_nodes = [n for n in nodes if n.state != "SLEEP" or time_step >= n.next_wake_up_time]
         
         if not active_nodes:
@@ -74,12 +86,25 @@ def run_simulation(number_of_nodes, duration_seconds):
                         event_type = log_entry.get('event'),
                         details = log_entry.get('details', ''),
                         energy_level = node.energy_level)
+                
             packet = node_result.get('packet')
 
             if packet:
                 total_packets_sent += 1
+                
+                best_gateway_id = None
+                best_rssi = -999
 
-                is_collided = channel_manager.check_collision(packet, time_step)
+                for gw in gateways:
+                    rssi = calculate_rssi(node, gw)
+                    if gw.receive_packet(packet, rssi):
+                        if rssi > best_rssi:
+                            best_rssi = rssi
+                            best_gateway_id = gw.id
+                            #is_receive_by_any_gw = True
+
+                is_collided = channel_manager.check_collision(packet, time_step, best_rssi)
+                
                 if is_collided:
                     total_collisions += 1
                     logger.log(timestamp = time_step,
@@ -89,20 +114,27 @@ def run_simulation(number_of_nodes, duration_seconds):
                             energy_level = node.energy_level)
                     continue
                 #print(f"!!! Thời gian {time_step}s: Node {node.id} đang phát gói tin.")
-
-                best_gateway_id = None
-                best_rssi = -999
-
-                #is_receive_by_any_gw = False
                 
-                for gw in gateways:
-                    rssi = calculate_rssi(node, gw)
-                    if gw.receive_packet(packet, rssi):
-                        if rssi > best_rssi:
-                            best_rssi = rssi
-                            best_gateway_id = gw.id
-                            #is_receive_by_any_gw = True
+                sensitivity = GATEWAY_SENSITIVITY[ packet['sf'] ]
+
+                if best_rssi >= sensitivity:
+                    total_packets_received += 1
+                    logger.log(timestamp = time_step,
+                            node_id = node.id,
+                            event_type = "TRANSMIT_SUCCESS",
+                            details = f"Dữ liệu: {packet['data']}", 
+                            energy_level = node.energy_level,
+                            rssi = best_rssi,
+                            gateway_id = best_gateway_id)
                 
+                SAFETY_MARGIN = 10.0 # Thêm sai số 10dBm cho sensitivity
+
+                for sf in [7, 8, 9, 10, 11,12]:
+                    if best_rssi >= (sensitivity + SAFETY_MARGIN):
+                        node.sf = sf
+                        break
+
+
                 #if is_receive_by_any_gw:
                 if best_gateway_id is not None:
                     total_packets_received += 1
@@ -157,5 +189,5 @@ if __name__ == "__main__":
 
 print("\nKết thúc mô phỏng.")
 print(f" Tổng thời gian mô phỏng: {duration_seconds / 3600:.1f} giờ.")
-print(f" Tổng các gói tin đẫ nhận được bởi các node: {all_result[-1]['total_sent']}.")
+print(f" Tổng các gói tin đẫ gửi được bởi các node: {all_result[-1]['total_sent']}.")
 print(f" Tổng các gói tin đã nhận bởi gateway: {all_result[-1]['total_received']}.")

@@ -1,3 +1,12 @@
+GATEWAY_SENSITIVITY = {
+    7: -123.0,
+    8: -126.0,
+    9: -129.0,
+    10: -132.0,
+    11: -134.5,
+    12: -137.0
+}
+
 class Gateway:
     def __init__(self, gateway_id, x,y):
         print(f" Khởi tạo Gateway {gateway_id} tại vị trí ({x},{y})")
